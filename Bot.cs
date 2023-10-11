@@ -10,14 +10,11 @@ public class Bot
 {
     private readonly string _token;
     private readonly CancellationToken _cancelToken;
-    private readonly Downloader _downloader;
-    // private FileStream stream = new();
 
     public Bot(string token, CancellationToken cancelToken)
     {
         _token = token;
         _cancelToken = cancelToken;
-        _downloader = new Downloader();
     }
 
     public async Task Run()
@@ -51,7 +48,7 @@ public class Bot
         if(message.Text.ToLower() == "/start"){
             await botClient.SendTextMessageAsync(
                 message.Chat,
-                "Отправьте ссылку");
+                "Send a video link");
             return;
         }
 
@@ -59,10 +56,35 @@ public class Bot
         Console.WriteLine(
             $"Received a '{messageText}' message in chat {chatId}.");
 
-        Message sentMessage = await botClient.SendVideoAsync(
-            chatId: chatId,
-            video: InputFile.FromStream(await _downloader.GetFileStream(messageText)),
-            cancellationToken: cancellationToken);
+        try
+        {
+            var downloader = new Downloader();
+            var status = downloader.Download(messageText).Result;
+
+            if(status.IsSuccess)
+            {
+                await botClient.SendVideoAsync(
+                    chatId: chatId,
+                    video: InputFile.FromStream(downloader.GetFileStream()),
+                    cancellationToken: cancellationToken);
+                downloader.CleanUp();
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: chatId,
+                    text: status.Message,
+                    cancellationToken: cancellationToken);
+            }
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine(e.Message);
+            await botClient.SendTextMessageAsync(
+                chatId: chatId,
+                text: $"Incorrect link.",
+                cancellationToken: cancellationToken);
+        }
     }
 
     Task HandlePollingErrorAsync(
